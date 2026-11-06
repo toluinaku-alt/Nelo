@@ -1,14 +1,14 @@
-// Nelo Delivery Platform — Prisma Schema
-// Configured with SQLite for zero-setup local development and testable out-of-the-box.
-// For Supabase PostgreSQL production, see prisma/schema.supabase.prisma and supabase/migrations/
+// Nelo Delivery Platform — Supabase PostgreSQL Prisma Schema
+// Used for Vercel production deployment connected to Supabase PostgreSQL.
 
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 model User {
@@ -37,7 +37,7 @@ model User {
 model CustomerAddress {
   id                   String   @id @default(uuid())
   userId               String
-  label                String   // e.g. "Home", "Office", "Balogun Market"
+  label                String
   streetAddress        String
   city                 String   @default("Lagos")
   state                String   @default("Lagos State")
@@ -55,10 +55,10 @@ model CustomerAddress {
 
 model ServiceZone {
   id                  String   @id @default(uuid())
-  name                String   // e.g. "Lagos Island - VI / Lekki", "Lagos Mainland - Ikeja / Yaba", "Abuja Central"
+  name                String
   state               String   @default("Lagos")
-  baseFareKobo        Int      @default(120000) // 1,200 NGN
-  perKmRateKobo       Int      @default(15000)  // 150 NGN/km
+  baseFareKobo        Int      @default(120000)
+  perKmRateKobo       Int      @default(15000)
   surgeMultiplier     Float    @default(1.0)
   maxPackageWeightKg  Float    @default(25.0)
   isActive            Boolean  @default(true)
@@ -74,7 +74,7 @@ model Vendor {
   name              String
   slug              String            @unique
   description       String
-  category          String            // FOOD, GROCERY
+  category          String
   logoUrl           String?
   bannerUrl         String?
   streetAddress     String
@@ -88,7 +88,7 @@ model Vendor {
   rating            Float             @default(4.8)
   prepTimeMinutes   Int               @default(25)
   commissionPercent Float             @default(12.5)
-  payoutBankCode    String?           // e.g. "058" (GTBank), "044" (Access)
+  payoutBankCode    String?
   payoutAccountNum  String?
   payoutAccountName String?
   createdAt         DateTime          @default(now())
@@ -110,7 +110,7 @@ model VendorStaff {
   id        String   @id @default(uuid())
   vendorId  String
   userId    String
-  role      String   @default("MANAGER") // OWNER, MANAGER, KITCHEN_STAFF
+  role      String   @default("MANAGER")
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -140,7 +140,7 @@ model CatalogItem {
   categoryId             String
   name                   String
   description            String?
-  priceKobo              Int             // Price in Nigerian Kobo
+  priceKobo              Int
   imageUrl               String?
   isAvailable            Boolean         @default(true)
   preparationTimeMinutes Int             @default(15)
@@ -158,8 +158,8 @@ model CatalogItem {
 model RiderProfile {
   id                  String          @id @default(uuid())
   userId              String          @unique
-  employmentType      String          @default("FREELANCE") // FREELANCE, COMPANY_EMPLOYED
-  vehicleType         String          @default("MOTORCYCLE") // MOTORCYCLE, BICYCLE, VAN
+  employmentType      String          @default("FREELANCE")
+  vehicleType         String          @default("MOTORCYCLE")
   plateNumber         String?
   driversLicense      String?
   isVerified          Boolean         @default(true)
@@ -185,12 +185,12 @@ model RiderProfile {
 
 model Order {
   id                   String                   @id @default(uuid())
-  orderNumber          String                   @unique // e.g. NELO-LG-8291
+  orderNumber          String                   @unique
   customerId           String
-  serviceType          String                   // MARKETPLACE, SHOP_FOR_ME, PACKAGE
-  status               String                   @default("DRAFT") // DRAFT, QUOTED, AWAITING_PAYMENT, PLACED, VENDOR_ACCEPTED, AWAITING_RIDER, ASSIGNED, PICKED_UP, IN_TRANSIT, DELIVERED, DECLINED, CANCELLED, PAYMENT_FAILED, DELIVERY_EXCEPTION, RETURNED, REFUNDED
+  serviceType          String
+  status               String                   @default("DRAFT")
   zoneId               String
-  vendorId             String?                  // Optional: for MARKETPLACE orders
+  vendorId             String?
   currency             String                   @default("NGN")
   subtotalKobo         Int                      @default(0)
   deliveryFeeKobo      Int                      @default(0)
@@ -198,8 +198,8 @@ model Order {
   surgeFeeKobo         Int                      @default(0)
   tipKobo              Int                      @default(0)
   totalAmountKobo      Int                      @default(0)
-  pickupAddressJson    String                   // Snapshot: address, coords, contact
-  dropoffAddressJson   String                   // Snapshot: address, coords, contact
+  pickupAddressJson    String
+  dropoffAddressJson   String
   cancellationReason   String?
   idempotencyKey       String?                  @unique
   createdAt            DateTime                 @default(now())
@@ -254,14 +254,14 @@ model OrderItem {
 model ShopForMeDetails {
   id                     String     @id @default(uuid())
   orderId                String     @unique
-  shopName               String     // Name of store or market (e.g. "Balogun Market Stall 45", "Ebeano Supermarket Lekki")
+  shopName               String
   shopAddress            String
-  goodsBudgetKobo        Int        // Budget reserved specifically for purchasing goods
-  actualGoodsSpentKobo   Int        @default(0) // Actual amount spent from receipt
-  spendingLimitKobo      Int        // Max upper bound before hard stop
-  substitutionPreference String     @default("CALL_CUSTOMER") // CALL_CUSTOMER, RIDER_DISCRETION, DO_NOT_REPLACE
+  goodsBudgetKobo        Int
+  actualGoodsSpentKobo   Int        @default(0)
+  spendingLimitKobo      Int
+  substitutionPreference String     @default("CALL_CUSTOMER")
   receiptPhotoUrl        String?
-  reconciliationStatus   String     @default("PENDING") // PENDING, APPROVED_BY_CUSTOMER, RECONCILED, DISPUTED
+  reconciliationStatus   String     @default("PENDING")
   customerApprovalRequired Boolean  @default(false)
   customerApprovedAt     DateTime?
   notes                  String?
@@ -276,7 +276,7 @@ model ShopItem {
   itemName          String
   estimatedPriceKobo Int             @default(0)
   quantity          Int              @default(1)
-  unit              String?          // e.g. "kg", "pack", "crate"
+  unit              String?
   notes             String?
   isPurchased       Boolean          @default(false)
   actualPriceKobo   Int?
@@ -290,14 +290,14 @@ model ShopItem {
 model PackageDetails {
   id                   String   @id @default(uuid())
   orderId              String   @unique
-  packageCategory      String   // DOCUMENTS, FOOD_BOX, ELECTRONICS, CLOTHING, PARCEL
+  packageCategory      String
   weightKg             Float    @default(1.0)
-  dimensionsCm         String?  // e.g. "30x20x15"
+  dimensionsCm         String?
   recipientName        String
   recipientPhone       String
   recipientAltPhone    String?
   isFragile            Boolean  @default(false)
-  securityPin          String   // 4-digit verification PIN required for drop-off handoff
+  securityPin          String
   deliveryInstructions String?
   proofPhotoUrl        String?
 
@@ -308,12 +308,12 @@ model Delivery {
   id                       String          @id @default(uuid())
   orderId                  String          @unique
   riderId                  String?
-  status                   String          @default("PENDING_DISPATCH") // PENDING_DISPATCH, OFFERED, ACCEPTED, ARRIVED_PICKUP, PICKED_UP, EN_ROUTE_DROPOFF, ARRIVED_DROPOFF, DELIVERED, FAILED, CANCELLED
+  status                   String          @default("PENDING_DISPATCH")
   pickupTime               DateTime?
   deliveryTime             DateTime?
   estimatedDurationMinutes Int             @default(35)
   distanceKm               Float           @default(5.2)
-  proofType                String          @default("PIN_AND_PHOTO") // PIN_AND_PHOTO, PIN_ONLY, PHOTO_ONLY
+  proofType                String          @default("PIN_AND_PHOTO")
   proofNotes               String?
   proofPhotoUrl            String?
   verifiedPin              String?
@@ -334,7 +334,7 @@ model DispatchOffer {
   id                    String        @id @default(uuid())
   deliveryId            String
   riderId               String
-  status                String        @default("OFFERED") // OFFERED, ACCEPTED, DECLINED, EXPIRED, SUPERSEDED
+  status                String        @default("OFFERED")
   offeredAt             DateTime      @default(now())
   expiresAt             DateTime
   respondedAt           DateTime?
@@ -354,11 +354,11 @@ model Payment {
   orderId            String   @unique
   amountKobo         Int
   currency           String   @default("NGN")
-  provider           String   @default("MOCK_PAYSTACK") // MOCK_PAYSTACK, PAYSTACK, FLUTTERWAVE
-  status             String   @default("PENDING") // PENDING, SUCCESS, FAILED, REFUNDED
+  provider           String   @default("MOCK_PAYSTACK")
+  status             String   @default("PENDING")
   providerRef        String?  @unique
   idempotencyKey     String?  @unique
-  channel            String   @default("CARD") // CARD, BANK_TRANSFER, USSD, WALLET
+  channel            String   @default("CARD")
   paidAt             DateTime?
   webhookPayloadJson String?
   createdAt          DateTime @default(now())
@@ -372,7 +372,7 @@ model Payment {
 
 model LedgerAccount {
   id          String        @id @default(uuid())
-  code        String        @unique // CUSTOMER_WALLET, VENDOR_PAYABLE, RIDER_PAYABLE, PLATFORM_FEES, ESCROW_GOODS, REFUND_CLEARING
+  code        String        @unique
   name        String
   balanceKobo Int           @default(0)
   currency    String        @default("NGN")
@@ -390,7 +390,7 @@ model LedgerEntry {
   creditAccountId String
   amountKobo      Int
   description     String
-  referenceType   String        // ORDER_PAYMENT, VENDOR_PAYOUT, RIDER_EARNING, PLATFORM_COMMISSION, SHOPPING_RECONCILIATION, CUSTOMER_REFUND
+  referenceType   String
   isCompensating  Boolean       @default(false)
   createdAt       DateTime      @default(now())
 
@@ -405,7 +405,7 @@ model LedgerEntry {
 model OrderEvent {
   id          String   @id @default(uuid())
   orderId     String
-  eventType   String   // STATUS_CHANGE, RIDER_ASSIGNED, RECEIPT_UPLOADED, SUBSTITUTION_REQUESTED, PIN_VERIFIED, EXCEPTION_LOGGED
+  eventType   String
   actorId     String?
   actorRole   String?
   metadataJson String?
@@ -422,8 +422,8 @@ model SupportCase {
   orderId         String?
   creatorId       String
   assignedToId    String?
-  status          String   @default("OPEN") // OPEN, INVESTIGATING, RESOLVED, CLOSED
-  priority        String   @default("MEDIUM") // LOW, MEDIUM, HIGH, URGENT
+  status          String   @default("OPEN")
+  priority        String   @default("MEDIUM")
   subject         String
   description     String
   resolutionNotes String?
@@ -443,7 +443,7 @@ model AuditLog {
   id             String   @id @default(uuid())
   userId         String
   userRole       String
-  action         String   // ORDER_REASSIGN, MANUAL_OVERRIDE, REFUND_ISSUED, VENDOR_UPDATE, ZONE_CONFIG, FEE_CHANGE
+  action         String
   targetResource String
   targetId       String
   reason         String
@@ -464,7 +464,7 @@ model Rating {
   fromUserId  String
   toRiderId   String?
   toVendorId  String?
-  score       Int           // 1 to 5
+  score       Int
   comment     String?
   createdAt   DateTime      @default(now())
 
