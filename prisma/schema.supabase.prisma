@@ -1,0 +1,479 @@
+// Nelo Delivery Platform — Supabase PostgreSQL Prisma Schema
+// Used for Vercel production deployment connected to Supabase PostgreSQL.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model User {
+  id           String        @id @default(uuid())
+  email        String        @unique
+  fullName     String
+  phone        String?
+  role         String        @default("CUSTOMER") // CUSTOMER, VENDOR_OWNER, VENDOR_STAFF, RIDER, DISPATCHER, SUPPORT_AGENT, FINANCE_OPERATOR, ADMIN
+  avatarUrl    String?
+  isActive     Boolean       @default(true)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  addresses    CustomerAddress[]
+  orders       Order[]       @relation("CustomerOrders")
+  riderProfile RiderProfile?
+  vendorStaff  VendorStaff[]
+  supportCases SupportCase[] @relation("CreatedSupportCases")
+  assignedCases SupportCase[] @relation("AssignedSupportCases")
+  auditLogs    AuditLog[]
+  ratingsGiven Rating[]      @relation("RatingsGiven")
+
+  @@index([role])
+}
+
+model CustomerAddress {
+  id                   String   @id @default(uuid())
+  userId               String
+  label                String
+  streetAddress        String
+  city                 String   @default("Lagos")
+  state                String   @default("Lagos State")
+  latitude             Float
+  longitude            Float
+  deliveryInstructions String?
+  isDefault            Boolean  @default(false)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model ServiceZone {
+  id                  String   @id @default(uuid())
+  name                String
+  state               String   @default("Lagos")
+  baseFareKobo        Int      @default(120000)
+  perKmRateKobo       Int      @default(15000)
+  surgeMultiplier     Float    @default(1.0)
+  maxPackageWeightKg  Float    @default(25.0)
+  isActive            Boolean  @default(true)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  vendors             Vendor[]
+  orders              Order[]
+}
+
+model Vendor {
+  id                String            @id @default(uuid())
+  name              String
+  slug              String            @unique
+  description       String
+  category          String
+  logoUrl           String?
+  bannerUrl         String?
+  streetAddress     String
+  city              String            @default("Lagos")
+  state             String            @default("Lagos State")
+  latitude          Float
+  longitude         Float
+  zoneId            String
+  isVerified        Boolean           @default(true)
+  isOpen            Boolean           @default(true)
+  rating            Float             @default(4.8)
+  prepTimeMinutes   Int               @default(25)
+  commissionPercent Float             @default(12.5)
+  payoutBankCode    String?
+  payoutAccountNum  String?
+  payoutAccountName String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  zone              ServiceZone       @relation(fields: [zoneId], references: [id])
+  staff             VendorStaff[]
+  catalogCategories CatalogCategory[]
+  catalogItems      CatalogItem[]
+  orders            Order[]
+  ratings           Rating[]
+
+  @@index([zoneId])
+  @@index([category])
+  @@index([isOpen])
+}
+
+model VendorStaff {
+  id        String   @id @default(uuid())
+  vendorId  String
+  userId    String
+  role      String   @default("MANAGER")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  vendor    Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([vendorId, userId])
+}
+
+model CatalogCategory {
+  id        String        @id @default(uuid())
+  vendorId  String
+  name      String
+  sortOrder Int           @default(0)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  vendor    Vendor        @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  items     CatalogItem[]
+
+  @@index([vendorId])
+}
+
+model CatalogItem {
+  id                     String          @id @default(uuid())
+  vendorId               String
+  categoryId             String
+  name                   String
+  description            String?
+  priceKobo              Int
+  imageUrl               String?
+  isAvailable            Boolean         @default(true)
+  preparationTimeMinutes Int             @default(15)
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
+
+  vendor                 Vendor          @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  category               CatalogCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  orderItems             OrderItem[]
+
+  @@index([vendorId])
+  @@index([categoryId])
+}
+
+model RiderProfile {
+  id                  String          @id @default(uuid())
+  userId              String          @unique
+  employmentType      String          @default("FREELANCE")
+  vehicleType         String          @default("MOTORCYCLE")
+  plateNumber         String?
+  driversLicense      String?
+  isVerified          Boolean         @default(true)
+  isOnline            Boolean         @default(false)
+  currentLat          Float?
+  currentLng          Float?
+  lastLocationUpdate  DateTime?
+  rating              Float           @default(4.9)
+  totalDeliveries     Int             @default(0)
+  walletBalanceKobo   Int             @default(0)
+  activeZoneId        String?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  user                User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries          Delivery[]
+  offers              DispatchOffer[]
+  ratingsReceived     Rating[]
+
+  @@index([isOnline])
+  @@index([employmentType])
+}
+
+model Order {
+  id                   String                   @id @default(uuid())
+  orderNumber          String                   @unique
+  customerId           String
+  serviceType          String
+  status               String                   @default("DRAFT")
+  zoneId               String
+  vendorId             String?
+  currency             String                   @default("NGN")
+  subtotalKobo         Int                      @default(0)
+  deliveryFeeKobo      Int                      @default(0)
+  serviceFeeKobo       Int                      @default(0)
+  surgeFeeKobo         Int                      @default(0)
+  tipKobo              Int                      @default(0)
+  totalAmountKobo      Int                      @default(0)
+  pickupAddressJson    String
+  dropoffAddressJson   String
+  cancellationReason   String?
+  idempotencyKey       String?                  @unique
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+
+  customer             User                     @relation("CustomerOrders", fields: [customerId], references: [id])
+  zone                 ServiceZone              @relation(fields: [zoneId], references: [id])
+  vendor               Vendor?                  @relation(fields: [vendorId], references: [id])
+  items                OrderItem[]
+  marketplaceDetails   MarketplaceOrderDetails?
+  shopForMeDetails     ShopForMeDetails?
+  packageDetails       PackageDetails?
+  delivery             Delivery?
+  payment              Payment?
+  events               OrderEvent[]
+  supportCases         SupportCase[]
+  ratings              Rating[]
+
+  @@index([customerId])
+  @@index([status])
+  @@index([serviceType])
+  @@index([vendorId])
+  @@index([createdAt])
+}
+
+model MarketplaceOrderDetails {
+  id                 String   @id @default(uuid())
+  orderId            String   @unique
+  vendorInstructions String?
+  cutleryIncluded    Boolean  @default(false)
+  prepStartedAt      DateTime?
+  prepCompletedAt    DateTime?
+
+  order              Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model OrderItem {
+  id                  String       @id @default(uuid())
+  orderId             String
+  catalogItemId       String?
+  nameSnapshot        String
+  priceKoboSnapshot   Int
+  quantity            Int
+  specialInstructions String?
+
+  order               Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  catalogItem         CatalogItem? @relation(fields: [catalogItemId], references: [id], onDelete: SetNull)
+
+  @@index([orderId])
+}
+
+model ShopForMeDetails {
+  id                     String     @id @default(uuid())
+  orderId                String     @unique
+  shopName               String
+  shopAddress            String
+  goodsBudgetKobo        Int
+  actualGoodsSpentKobo   Int        @default(0)
+  spendingLimitKobo      Int
+  substitutionPreference String     @default("CALL_CUSTOMER")
+  receiptPhotoUrl        String?
+  reconciliationStatus   String     @default("PENDING")
+  customerApprovalRequired Boolean  @default(false)
+  customerApprovedAt     DateTime?
+  notes                  String?
+
+  order                  Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  items                  ShopItem[]
+}
+
+model ShopItem {
+  id                String           @id @default(uuid())
+  shopDetailsId     String
+  itemName          String
+  estimatedPriceKobo Int             @default(0)
+  quantity          Int              @default(1)
+  unit              String?
+  notes             String?
+  isPurchased       Boolean          @default(false)
+  actualPriceKobo   Int?
+  substitutionNotes String?
+
+  shopDetails       ShopForMeDetails @relation(fields: [shopDetailsId], references: [id], onDelete: Cascade)
+
+  @@index([shopDetailsId])
+}
+
+model PackageDetails {
+  id                   String   @id @default(uuid())
+  orderId              String   @unique
+  packageCategory      String
+  weightKg             Float    @default(1.0)
+  dimensionsCm         String?
+  recipientName        String
+  recipientPhone       String
+  recipientAltPhone    String?
+  isFragile            Boolean  @default(false)
+  securityPin          String
+  deliveryInstructions String?
+  proofPhotoUrl        String?
+
+  order                Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model Delivery {
+  id                       String          @id @default(uuid())
+  orderId                  String          @unique
+  riderId                  String?
+  status                   String          @default("PENDING_DISPATCH")
+  pickupTime               DateTime?
+  deliveryTime             DateTime?
+  estimatedDurationMinutes Int             @default(35)
+  distanceKm               Float           @default(5.2)
+  proofType                String          @default("PIN_AND_PHOTO")
+  proofNotes               String?
+  proofPhotoUrl            String?
+  verifiedPin              String?
+  riderEarningsKobo        Int             @default(0)
+  dispatcherNote           String?
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime        @updatedAt
+
+  order                    Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  rider                    RiderProfile?   @relation(fields: [riderId], references: [id])
+  offers                   DispatchOffer[]
+
+  @@index([riderId])
+  @@index([status])
+}
+
+model DispatchOffer {
+  id                    String        @id @default(uuid())
+  deliveryId            String
+  riderId               String
+  status                String        @default("OFFERED")
+  offeredAt             DateTime      @default(now())
+  expiresAt             DateTime
+  respondedAt           DateTime?
+  responseReason        String?
+  estimatedEarningsKobo Int           @default(0)
+
+  delivery              Delivery      @relation(fields: [deliveryId], references: [id], onDelete: Cascade)
+  rider                 RiderProfile  @relation(fields: [riderId], references: [id], onDelete: Cascade)
+
+  @@index([deliveryId])
+  @@index([riderId])
+  @@index([status])
+}
+
+model Payment {
+  id                 String   @id @default(uuid())
+  orderId            String   @unique
+  amountKobo         Int
+  currency           String   @default("NGN")
+  provider           String   @default("MOCK_PAYSTACK")
+  status             String   @default("PENDING")
+  providerRef        String?  @unique
+  idempotencyKey     String?  @unique
+  channel            String   @default("CARD")
+  paidAt             DateTime?
+  webhookPayloadJson String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  order              Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([providerRef])
+}
+
+model LedgerAccount {
+  id          String        @id @default(uuid())
+  code        String        @unique
+  name        String
+  balanceKobo Int           @default(0)
+  currency    String        @default("NGN")
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  debitEntries  LedgerEntry[] @relation("DebitEntries")
+  creditEntries LedgerEntry[] @relation("CreditEntries")
+}
+
+model LedgerEntry {
+  id              String        @id @default(uuid())
+  orderId         String?
+  debitAccountId  String
+  creditAccountId String
+  amountKobo      Int
+  description     String
+  referenceType   String
+  isCompensating  Boolean       @default(false)
+  createdAt       DateTime      @default(now())
+
+  debitAccount    LedgerAccount @relation("DebitEntries", fields: [debitAccountId], references: [id])
+  creditAccount   LedgerAccount @relation("CreditEntries", fields: [creditAccountId], references: [id])
+
+  @@index([orderId])
+  @@index([createdAt])
+  @@index([referenceType])
+}
+
+model OrderEvent {
+  id          String   @id @default(uuid())
+  orderId     String
+  eventType   String
+  actorId     String?
+  actorRole   String?
+  metadataJson String?
+  timestamp   DateTime @default(now())
+
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([timestamp])
+}
+
+model SupportCase {
+  id              String   @id @default(uuid())
+  orderId         String?
+  creatorId       String
+  assignedToId    String?
+  status          String   @default("OPEN")
+  priority        String   @default("MEDIUM")
+  subject         String
+  description     String
+  resolutionNotes String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  order           Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  creator         User     @relation("CreatedSupportCases", fields: [creatorId], references: [id])
+  assignedTo      User?    @relation("AssignedSupportCases", fields: [assignedToId], references: [id])
+
+  @@index([orderId])
+  @@index([status])
+  @@index([priority])
+}
+
+model AuditLog {
+  id             String   @id @default(uuid())
+  userId         String
+  userRole       String
+  action         String
+  targetResource String
+  targetId       String
+  reason         String
+  metadataJson   String?
+  ipAddress      String?
+  timestamp      DateTime @default(now())
+
+  user           User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([action])
+  @@index([timestamp])
+}
+
+model Rating {
+  id          String        @id @default(uuid())
+  orderId     String
+  fromUserId  String
+  toRiderId   String?
+  toVendorId  String?
+  score       Int
+  comment     String?
+  createdAt   DateTime      @default(now())
+
+  order       Order         @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromUser    User          @relation("RatingsGiven", fields: [fromUserId], references: [id])
+  toRider     RiderProfile? @relation(fields: [toRiderId], references: [id])
+  toVendor    Vendor?       @relation(fields: [toVendorId], references: [id])
+
+  @@index([orderId])
+  @@index([toRiderId])
+  @@index([toVendorId])
+}

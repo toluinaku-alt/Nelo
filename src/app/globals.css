@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --nelo-primary: #00684A;
+  --nelo-primary-dark: #004d36;
+  --nelo-accent: #D97706;
+  --nelo-bg: #f8fafc;
+}
+
+body {
+  background-color: var(--nelo-bg);
+  color: #0f172a;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+@layer components {
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-nelo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-nelo-700 active:scale-95 disabled:pointer-events-none disabled:opacity-50;
+  }
+  .btn-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 shadow-sm border border-slate-200 transition hover:bg-slate-50 active:scale-95 disabled:pointer-events-none disabled:opacity-50;
+  }
+  .btn-accent {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl bg-amberGold-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-amberGold-700 active:scale-95 disabled:pointer-events-none disabled:opacity-50;
+  }
+  .badge {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+  .card {
+    @apply rounded-2xl border border-slate-200 bg-white p-6 shadow-sm;
+  }
+}
