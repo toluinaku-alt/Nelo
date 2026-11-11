@@ -76,7 +76,9 @@ export default async function RiderPage() {
       order: {
         include: {
           packageDetails: true,
-          shopForMeDetails: true,
+          shopForMeDetails: {
+            include: { items: true },
+          },
         },
       },
     },
@@ -157,6 +159,14 @@ export default async function RiderPage() {
           goodsBudgetKobo: del.order.shopForMeDetails?.goodsBudgetKobo,
           spendingLimitKobo: del.order.shopForMeDetails?.spendingLimitKobo,
           shopName: del.order.shopForMeDetails?.shopName,
+          shopForMeDetails: del.order.shopForMeDetails
+            ? {
+                ...del.order.shopForMeDetails,
+                customerApprovedAt: del.order.shopForMeDetails.customerApprovedAt?.toISOString() || null,
+                shopPaidAt: del.order.shopForMeDetails.shopPaidAt?.toISOString() || null,
+                pickupReleasedAt: del.order.shopForMeDetails.pickupReleasedAt?.toISOString() || null,
+              }
+            : null,
         };
       })}
       completedDeliveries={completedDeliveries.map((cd) => ({

@@ -60,6 +60,9 @@ export default async function OpsDashboardPage() {
     include: {
       customer: true,
       zone: true,
+      shopForMeDetails: {
+        include: { items: true },
+      },
       delivery: {
         include: {
           rider: {
@@ -120,7 +123,15 @@ export default async function OpsDashboardPage() {
         serviceFeeKobo: o.serviceFeeKobo,
         customerName: o.customer.fullName,
         customerPhone: o.customer.phone,
-        zoneName: o.zone?.name || "Lagos Central",
+        zoneName: o.zone?.name || "Calabar Municipal",
+        shopForMeDetails: o.shopForMeDetails
+          ? {
+              ...o.shopForMeDetails,
+              customerApprovedAt: o.shopForMeDetails.customerApprovedAt?.toISOString() || null,
+              shopPaidAt: o.shopForMeDetails.shopPaidAt?.toISOString() || null,
+              pickupReleasedAt: o.shopForMeDetails.pickupReleasedAt?.toISOString() || null,
+            }
+          : null,
         delivery: o.delivery
           ? {
               id: o.delivery.id,

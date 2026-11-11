@@ -916,7 +916,546 @@ async function main() {
     },
   });
 
-  console.log("✅ Nelo Seed Completed Successfully!");
+  // 7. CALABAR PILOT INITIALIZATION & 4 TEST SCENARIOS
+  console.log("🌊 Setting up Calabar Pilot Zones & 4 Demonstration Scenarios...");
+
+  // Calabar Zones
+  const zoneCalabarMunicipal = await prisma.serviceZone.upsert({
+    where: { id: "zone-calabar-municipal" },
+    update: {},
+    create: {
+      id: "zone-calabar-municipal",
+      name: "Calabar Municipal (Marian, State Housing, UNICAL, MCC)",
+      state: "Cross River State",
+      baseFareKobo: 120000,
+      perKmRateKobo: 15000,
+      surgeMultiplier: 1.0,
+      maxPackageWeightKg: 25.0,
+    },
+  });
+
+  const zoneCalabarSouth = await prisma.serviceZone.upsert({
+    where: { id: "zone-calabar-south" },
+    update: {},
+    create: {
+      id: "zone-calabar-south",
+      name: "Calabar South (Watt Market, Target, Bedwell, Marina)",
+      state: "Cross River State",
+      baseFareKobo: 120000,
+      perKmRateKobo: 15000,
+      surgeMultiplier: 1.0,
+      maxPackageWeightKg: 25.0,
+    },
+  });
+
+  // Calabar Pilot Addresses for Customer Chioma
+  await prisma.customerAddress.upsert({
+    where: { id: "addr-calabar-state-housing" },
+    update: {},
+    create: {
+      id: "addr-calabar-state-housing",
+      userId: customerUser.id,
+      label: "Home (State Housing Estate)",
+      streetAddress: "12 State Housing Estate, Marian Road",
+      city: "Calabar",
+      state: "Cross River State",
+      latitude: 4.9757,
+      longitude: 8.3417,
+      deliveryInstructions: "Call gate security when you arrive.",
+      isDefault: true,
+    },
+  });
+
+  await prisma.customerAddress.upsert({
+    where: { id: "addr-calabar-unical" },
+    update: {},
+    create: {
+      id: "addr-calabar-unical",
+      userId: customerUser.id,
+      label: "Work (Near UNICAL Gate)",
+      streetAddress: "Plot 8 Etta Agbor Road, UNICAL Area",
+      city: "Calabar",
+      state: "Cross River State",
+      latitude: 4.9532,
+      longitude: 8.3496,
+      deliveryInstructions: "Leave with department security desk.",
+      isDefault: false,
+    },
+  });
+
+  // ==========================================
+  // SCENARIO 1: Normal Purchase (Marian Market)
+  // Within budget, Admin paid shop, delivered & reconciled with ₦1,500 refund
+  // ==========================================
+  await prisma.order.upsert({
+    where: { orderNumber: "NELO-SFM-2001" },
+    update: {},
+    create: {
+      id: "order-calabar-sfm-1-normal",
+      orderNumber: "NELO-SFM-2001",
+      customerId: customerUser.id,
+      serviceType: "SHOP_FOR_ME",
+      status: "DELIVERED",
+      zoneId: zoneCalabarMunicipal.id,
+      subtotalKobo: 1800000, // ₦18,000 initial goods budget
+      deliveryFeeKobo: 120000, // ₦1,200
+      serviceFeeKobo: 100000, // ₦1,000
+      totalAmountKobo: 2020000, // ₦20,200
+      pickupAddressJson: JSON.stringify({
+        name: "Marian Market (Ika Ika Oqua Market)",
+        address: "Marian Road, Calabar Municipal",
+        latitude: 4.9757,
+        longitude: 8.3417,
+      }),
+      dropoffAddressJson: JSON.stringify({
+        label: "Home (State Housing Estate)",
+        streetAddress: "12 State Housing Estate, Marian Road",
+        city: "Calabar",
+        latitude: 4.9757,
+        longitude: 8.3417,
+      }),
+      shopForMeDetails: {
+        create: {
+          shopName: "Marian Market (Ika Ika Oqua) — Stall 14B",
+          shopAddress: "Marian Road, Calabar Municipal",
+          goodsBudgetKobo: 1800000, // ₦18,000
+          spendingLimitKobo: 2000000, // ₦20,000
+          actualGoodsSpentKobo: 1650000, // ₦16,500 spent (₦1,500 unspent)
+          reconciledBalanceKobo: 150000, // ₦1,500 refunded to customer
+          reconciliationStatus: "REFUNDED",
+          stage: "DELIVERED",
+          assignedAdminId: dispatcherUser.id,
+          assignedAdminName: "Folake Daniels",
+          shopQuoteKobo: 1650000,
+          shopPaymentStatus: "CONFIRMED",
+          shopPaymentAmountKobo: 1650000,
+          shopPaymentRef: "TRF-OPAY-482019",
+          shopPaymentMethod: "OPAY_DIRECT_TRANSFER",
+          shopPaidAt: new Date(Date.now() - 3600000),
+          pickupLocked: false,
+          pickupReleasedAt: new Date(Date.now() - 3500000),
+          customerApprovalStatus: "APPROVED",
+          notes: "Fresh Afang leaves and smoked crayfish from Oron.",
+          items: {
+            create: [
+              {
+                itemName: "Fresh Afang Leaves (Shredded)",
+                quantity: 4,
+                unit: "bunch",
+                itemStatus: "AVAILABLE",
+                actualPriceKobo: 600000,
+                isPurchased: true,
+                photoUrl: "https://images.unsplash.com/photo-1540420773420-3366772f4999?w=300",
+              },
+              {
+                itemName: "Smoked Oron Crayfish",
+                quantity: 2,
+                unit: "paint_rubber",
+                itemStatus: "AVAILABLE",
+                actualPriceKobo: 800000,
+                isPurchased: true,
+                photoUrl: "https://images.unsplash.com/photo-1534422298391-e4f8c172dddb?w=300",
+              },
+              {
+                itemName: "Pure Red Palm Oil",
+                quantity: 1,
+                unit: "bottle",
+                itemStatus: "AVAILABLE",
+                actualPriceKobo: 250000,
+                isPurchased: true,
+                photoUrl: "https://images.unsplash.com/photo-1474979266404-7eaacbcd87c5?w=300",
+              },
+            ],
+          },
+        },
+      },
+      payment: {
+        create: {
+          amountKobo: 2020000,
+          channel: "CARD",
+          status: "SUCCESS",
+          provider: "MOCK_PAYSTACK",
+          providerRef: "MOCK-CAL-2001",
+          paidAt: new Date(Date.now() - 7200000),
+        },
+      },
+      delivery: {
+        create: {
+          distanceKm: 3.5,
+          estimatedDurationMinutes: 25,
+          riderEarningsKobo: 150000,
+          status: "DELIVERED",
+          riderId: riderProfileEmeka.id,
+          pickupTime: new Date(Date.now() - 3400000),
+          deliveryTime: new Date(Date.now() - 1800000),
+        },
+      },
+      events: {
+        create: [
+          {
+            eventType: "ORDER_PLACED",
+            actorId: customerUser.id,
+            actorRole: "CUSTOMER",
+            metadataJson: JSON.stringify({ note: "Calabar Pilot Shop for Me Order Placed" }),
+          },
+          {
+            eventType: "SHOP_PAYMENT_CONFIRMED",
+            actorId: dispatcherUser.id,
+            actorRole: "DISPATCHER",
+            metadataJson: JSON.stringify({ ref: "TRF-OPAY-482019", amountKobo: 1650000 }),
+          },
+          {
+            eventType: "RECONCILIATION_COMPLETED",
+            actorId: "system",
+            actorRole: "SYSTEM",
+            metadataJson: JSON.stringify({ refundKobo: 150000 }),
+          },
+        ],
+      },
+      messages: {
+        create: [
+          {
+            senderId: dispatcherUser.id,
+            senderRole: "ADMIN",
+            senderName: "Folake Daniels (Admin)",
+            message: "Welcome to Nelo Calabar Pilot! Rider Emeka Obi assigned to procure your items at Marian Market.",
+          },
+          {
+            senderId: riderProfileEmeka.userId,
+            senderRole: "RIDER",
+            senderName: "Emeka Obi (Rider)",
+            message: "I am in Marian Market. All items found fresh! Total quote is ₦16,500 (within your budget).",
+          },
+          {
+            senderId: dispatcherUser.id,
+            senderRole: "ADMIN",
+            senderName: "Folake Daniels (Admin)",
+            message: "Confirmed ₦16,500 transferred to merchant via Opay (Ref: TRF-OPAY-482019). Pickup is RELEASED to Emeka.",
+          },
+          {
+            senderId: "system",
+            senderRole: "ADMIN",
+            senderName: "Nelo Reconciliation Bot",
+            message: "Delivered! Unspent balance of ₦1,500 has been refunded to your customer wallet balance.",
+          },
+        ],
+      },
+    },
+  });
+
+  // ==========================================
+  // SCENARIO 2: Substitution Required (Watt Market)
+  // Rider proposes alternative crayfish variety; Customer approval needed
+  // ==========================================
+  await prisma.order.upsert({
+    where: { orderNumber: "NELO-SFM-2002" },
+    update: {},
+    create: {
+      id: "order-calabar-sfm-2-sub",
+      orderNumber: "NELO-SFM-2002",
+      customerId: customerUser.id,
+      serviceType: "SHOP_FOR_ME",
+      status: "CUSTOMER_APPROVAL_PENDING",
+      zoneId: zoneCalabarSouth.id,
+      subtotalKobo: 1500000, // ₦15,000 budget
+      deliveryFeeKobo: 120000,
+      serviceFeeKobo: 100000,
+      totalAmountKobo: 1720000, // ₦17,200
+      pickupAddressJson: JSON.stringify({
+        name: "Watt Market (Calabar South)",
+        address: "Calabar Road & Bedwell St, Calabar South",
+        latitude: 4.9575,
+        longitude: 8.3242,
+      }),
+      dropoffAddressJson: JSON.stringify({
+        label: "Family (Target Street)",
+        streetAddress: "24 Target Street, off Calabar Road",
+        city: "Calabar",
+        latitude: 4.9589,
+        longitude: 8.3241,
+      }),
+      shopForMeDetails: {
+        create: {
+          shopName: "Watt Market — Mama Eno Seafood Line",
+          shopAddress: "Bedwell Entry, Watt Market, Calabar South",
+          goodsBudgetKobo: 1500000,
+          spendingLimitKobo: 1700000,
+          stage: "CUSTOMER_APPROVAL_PENDING",
+          assignedAdminId: dispatcherUser.id,
+          assignedAdminName: "Folake Daniels",
+          shopQuoteKobo: 1550000, // ₦15,500
+          pickupLocked: true,
+          customerApprovalStatus: "PENDING",
+          customerApprovalRequired: true,
+          notes: "Please call if dry crayfish is small size.",
+          items: {
+            create: [
+              {
+                itemName: "Grade A Oron Crayfish",
+                quantity: 1,
+                unit: "paint_rubber",
+                itemStatus: "SUBSTITUTED",
+                proposedSubName: "Smoked Ibaka Special Crayfish (Sweet & Clean)",
+                proposedSubPriceKobo: 850000,
+                proposedSubNotes: "Grade A Oron was sold out; Ibaka batch is very sweet and clean",
+                isPurchased: false,
+                photoUrl: "https://images.unsplash.com/photo-1534422298391-e4f8c172dddb?w=300",
+              },
+              {
+                itemName: "Periwinkle in Shell (Clipped)",
+                quantity: 4,
+                unit: "derica",
+                itemStatus: "AVAILABLE",
+                actualPriceKobo: 700000,
+                isPurchased: true,
+                photoUrl: "https://images.unsplash.com/photo-1559847844-5315695dadae?w=300",
+              },
+            ],
+          },
+        },
+      },
+      payment: {
+        create: {
+          amountKobo: 1720000,
+          channel: "CARD",
+          status: "SUCCESS",
+          provider: "MOCK_PAYSTACK",
+          providerRef: "MOCK-CAL-2002",
+          paidAt: new Date(Date.now() - 1800000),
+        },
+      },
+      delivery: {
+        create: {
+          distanceKm: 2.8,
+          estimatedDurationMinutes: 20,
+          riderEarningsKobo: 140000,
+          status: "ACCEPTED",
+          riderId: riderProfileEmeka.id,
+        },
+      },
+      messages: {
+        create: [
+          {
+            senderId: riderProfileEmeka.userId,
+            senderRole: "RIDER",
+            senderName: "Emeka Obi (Rider)",
+            message: "I am at Mama Eno's stall in Watt Market. The Grade A Oron crayfish is finished, but she has fresh smoked Ibaka crayfish for ₦8,500. Please tap Approve so Admin can pay.",
+          },
+        ],
+      },
+    },
+  });
+
+  // ==========================================
+  // SCENARIO 3: Over-Budget Quote (SPAR Calabar Mall)
+  // Store prices exceed authorized ceiling; Customer approval required
+  // ==========================================
+  await prisma.order.upsert({
+    where: { orderNumber: "NELO-SFM-2003" },
+    update: {},
+    create: {
+      id: "order-calabar-sfm-3-overbudget",
+      orderNumber: "NELO-SFM-2003",
+      customerId: customerUser.id,
+      serviceType: "SHOP_FOR_ME",
+      status: "CUSTOMER_APPROVAL_PENDING",
+      zoneId: zoneCalabarMunicipal.id,
+      subtotalKobo: 2000000, // ₦20,000 budget
+      deliveryFeeKobo: 120000,
+      serviceFeeKobo: 100000,
+      totalAmountKobo: 2220000, // ₦22,200
+      pickupAddressJson: JSON.stringify({
+        name: "SPAR Calabar Mall (Cultural Centre)",
+        address: "Murtala Mohammed Highway, Calabar Municipal",
+        latitude: 4.9680,
+        longitude: 8.3361,
+      }),
+      dropoffAddressJson: JSON.stringify({
+        label: "Work (Near UNICAL Gate)",
+        streetAddress: "Plot 8 Etta Agbor Road, UNICAL Area",
+        city: "Calabar",
+        latitude: 4.9532,
+        longitude: 8.3496,
+      }),
+      shopForMeDetails: {
+        create: {
+          shopName: "SPAR Supermarket — Calabar Mall",
+          shopAddress: "Murtala Mohammed Highway, Calabar",
+          goodsBudgetKobo: 2000000, // ₦20,000
+          spendingLimitKobo: 2200000, // ₦22,000 ceiling
+          stage: "CUSTOMER_APPROVAL_PENDING",
+          assignedAdminId: dispatcherUser.id,
+          assignedAdminName: "Folake Daniels",
+          shopQuoteKobo: 2550000, // ₦25,500 (₦3,500 over ceiling!)
+          pickupLocked: true,
+          customerApprovalStatus: "PENDING",
+          customerApprovalRequired: true,
+          notes: "Branded butter, imported coffee, and oat milk.",
+          items: {
+            create: [
+              {
+                itemName: "Lurpak Salted Butter (250g)",
+                quantity: 2,
+                unit: "pack",
+                itemStatus: "AVAILABLE",
+                actualPriceKobo: 950000,
+                isPurchased: true,
+              },
+              {
+                itemName: "Nescafe Gold Blend (200g Jar)",
+                quantity: 1,
+                unit: "jar",
+                itemStatus: "AVAILABLE",
+                actualPriceKobo: 1150000,
+                isPurchased: true,
+              },
+              {
+                itemName: "Oatly Barista Oat Milk (1 Litre)",
+                quantity: 1,
+                unit: "carton",
+                itemStatus: "AVAILABLE",
+                actualPriceKobo: 450000,
+                isPurchased: true,
+              },
+            ],
+          },
+        },
+      },
+      payment: {
+        create: {
+          amountKobo: 2220000,
+          channel: "CARD",
+          status: "SUCCESS",
+          provider: "MOCK_PAYSTACK",
+          providerRef: "MOCK-CAL-2003",
+          paidAt: new Date(Date.now() - 900000),
+        },
+      },
+      delivery: {
+        create: {
+          distanceKm: 4.1,
+          estimatedDurationMinutes: 30,
+          riderEarningsKobo: 150000,
+          status: "ACCEPTED",
+          riderId: riderProfileEmeka.id,
+        },
+      },
+      messages: {
+        create: [
+          {
+            senderId: riderProfileEmeka.userId,
+            senderRole: "RIDER",
+            senderName: "Emeka Obi (Rider)",
+            message: "SPAR has increased the price of Lurpak Butter and Nescafe. The register total is ₦25,500 (₦3,500 above your authorized ₦22,000 limit). Please approve the difference so Admin can pay.",
+          },
+        ],
+      },
+    },
+  });
+
+  // ==========================================
+  // SCENARIO 4: Shop Cannot Supply / Out of Stock (Bedwell Hardware)
+  // Items unavailable; Admin cancelled and processed full refund
+  // ==========================================
+  await prisma.order.upsert({
+    where: { orderNumber: "NELO-SFM-2004" },
+    update: {},
+    create: {
+      id: "order-calabar-sfm-4-unavail",
+      orderNumber: "NELO-SFM-2004",
+      customerId: customerUser.id,
+      serviceType: "SHOP_FOR_ME",
+      status: "REFUNDED",
+      zoneId: zoneCalabarSouth.id,
+      subtotalKobo: 1200000, // ₦12,000
+      deliveryFeeKobo: 120000,
+      serviceFeeKobo: 100000,
+      totalAmountKobo: 1420000, // ₦14,200
+      cancellationReason: "Merchant shop out of stock for technical spare parts; full customer refund processed.",
+      pickupAddressJson: JSON.stringify({
+        name: "Bedwell Commercial & Hardware Hub",
+        address: "44 Bedwell Street, Calabar South",
+        latitude: 4.9560,
+        longitude: 8.3225,
+      }),
+      dropoffAddressJson: JSON.stringify({
+        label: "Home (State Housing Estate)",
+        streetAddress: "12 State Housing Estate, Marian Road",
+        city: "Calabar",
+        latitude: 4.9757,
+        longitude: 8.3417,
+      }),
+      shopForMeDetails: {
+        create: {
+          shopName: "Bedwell Electrical & Industrial Supplies",
+          shopAddress: "44 Bedwell Street, Calabar South",
+          goodsBudgetKobo: 1200000,
+          spendingLimitKobo: 1400000,
+          stage: "REFUNDED",
+          assignedAdminId: dispatcherUser.id,
+          assignedAdminName: "Folake Daniels",
+          pickupLocked: true,
+          reconciliationStatus: "REFUNDED",
+          reconciledBalanceKobo: 1200000,
+          notes: "Need specific 2.5mm copper cable roll.",
+          items: {
+            create: [
+              {
+                itemName: "Coleman 2.5mm Single Core Pure Copper Cable (100m)",
+                quantity: 1,
+                unit: "coil",
+                itemStatus: "UNAVAILABLE",
+                isPurchased: false,
+              },
+            ],
+          },
+        },
+      },
+      payment: {
+        create: {
+          amountKobo: 1420000,
+          channel: "CARD",
+          status: "REFUNDED",
+          provider: "MOCK_PAYSTACK",
+          providerRef: "MOCK-CAL-2004",
+          paidAt: new Date(Date.now() - 14400000),
+        },
+      },
+      delivery: {
+        create: {
+          distanceKm: 5.2,
+          estimatedDurationMinutes: 35,
+          riderEarningsKobo: 0,
+          status: "CANCELLED",
+          riderId: riderProfileEmeka.id,
+        },
+      },
+      messages: {
+        create: [
+          {
+            senderId: riderProfileEmeka.userId,
+            senderRole: "RIDER",
+            senderName: "Emeka Obi (Rider)",
+            message: "I visited Bedwell stores. None of the dealers have the genuine Coleman 2.5mm in stock today.",
+          },
+          {
+            senderId: dispatcherUser.id,
+            senderRole: "ADMIN",
+            senderName: "Folake Daniels (Admin)",
+            message: "Understood. Cancelling order and initiating full 100% refund of ₦14,200 to customer wallet. Ref: COMP-REF-40291.",
+          },
+          {
+            senderId: "system",
+            senderRole: "ADMIN",
+            senderName: "Nelo Refund Bot",
+            message: "Refund of ₦14,200 has been credited back to your account.",
+          },
+        ],
+      },
+    },
+  });
+
+  console.log("✅ Nelo Seed Completed Successfully (Including Calabar Pilot Scenarios)!");
 }
 
 main()

@@ -1,36 +1,33 @@
 import { getCurrentUser } from "@/lib/auth";
+import { CALABAR_PILOT_ADDRESSES } from "@/lib/types";
 import { ShopForMeClient } from "./ShopForMeClient";
 
 export const metadata = {
-  title: "Shop for Me — Nelo Nigeria",
-  description: "Personal concierge shopping from any market or unlisted store in Nigeria.",
+  title: "Shop for Me — Calabar Pilot | Nelo Nigeria",
+  description: "Personal concierge shopping from verified markets and shops across Calabar.",
 };
 
 export default async function ShopForMePage() {
   const user = await getCurrentUser();
 
-  const customerAddresses = user?.addresses && user.addresses.length > 0
-    ? user.addresses
-    : [
-        {
-          id: "addr-chioma-home",
-          userId: user?.id || "mock-user",
-          label: "Home (Lekki Phase 1)",
-          streetAddress: "14 Admiralty Way, Lekki Phase 1",
-          city: "Lagos",
-          latitude: 6.4474,
-          longitude: 3.4735,
-        },
-        {
-          id: "addr-chioma-office",
-          userId: user?.id || "mock-user",
-          label: "Office (Victoria Island)",
-          streetAddress: "Plot 12A Karimu Kotun, Victoria Island",
-          city: "Lagos",
-          latitude: 6.4281,
-          longitude: 3.4219,
-        },
-      ];
+  // Combine user addresses with Calabar pilot address presets for testing
+  const userAddresses = user?.addresses || [];
 
-  return <ShopForMeClient customerAddresses={customerAddresses} />;
+  const pilotAddresses = [
+    ...CALABAR_PILOT_ADDRESSES.map((a) => ({
+      id: a.id,
+      label: a.label,
+      streetAddress: a.streetAddress,
+      city: a.city,
+      state: a.state,
+      zoneId: a.zoneId,
+      zoneName: a.zoneName,
+      isServiceable: a.isServiceable,
+      latitude: a.latitude,
+      longitude: a.longitude,
+      notes: a.notes,
+    })),
+  ];
+
+  return <ShopForMeClient customerAddresses={pilotAddresses} />;
 }

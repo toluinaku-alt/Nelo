@@ -6,9 +6,10 @@ import { redirect } from "next/navigation";
 import { prisma } from "./prisma";
 import { getCurrentUser, requireRole, requireStaff } from "./auth";
 import { acceptDeliveryOffer, declineDeliveryOffer, createDispatchOffers } from "./dispatch";
-import { recordLedgerEntry, reconcileShopForMeLedger } from "./ledger";
+import { recordLedgerEntry, reconcileShopForMeLedger, recordAdminShopPaymentLedger } from "./ledger";
 import { notificationAdapter } from "./adapters/notification";
 import { estimateRoute } from "./adapters/maps";
+import { isCalabarServiceable } from "./types";
 
 /**
  * Switch active demo persona (Customer, Rider, Vendor Staff, Dispatcher, Support, Finance, Admin)
@@ -177,33 +178,64 @@ export async function createShopForMeOrderAction(data: {
   goodsBudgetKobo: number;
   spendingLimitKobo: number;
   substitutionPreference: string;
-  items: { name: string; quantity: number; unit?: string; notes?: string }[];
+  items: { name: string; quantity: number; unit?: string; notes?: string; photoUrl?: string }[];
   deliveryAddress: {
     label: string;
     streetAddress: string;
     city: string;
     latitude: number;
     longitude: number;
+    zoneId?: string;
   };
   notes?: string;
 }) {
   const user = await getCurrentUser();
-  if (!user || user.role !== "CUSTOMER" && user.role !== "ADMIN") {
+  if (!user || (user.role !== "CUSTOMER" && user.role !== "ADMIN")) {
     throw new Error("Only customers can place Shop for Me requests.");
   }
 
-  // Get Lagos Central Zone
-  const zone = await prisma.serviceZone.findFirst() || await prisma.serviceZone.create({
-    data: {
-      name: "Lagos Central",
-      state: "Lagos",
-      baseFareKobo: 150000,
-      perKmRateKobo: 20000,
-    },
+  // Enforce Calabar pilot boundary check
+  const boundaryCheck = isCalabarServiceable(data.deliveryAddress);
+  if (!boundaryCheck.serviceable) {
+    throw new Error(
+      boundaryCheck.reason ||
+        "The selected delivery address is outside the active Calabar pilot perimeter (Calabar Municipal & Calabar South)."
+    );
+  }
+
+  // Get or Create Calabar Service Zone
+  const zoneId = boundaryCheck.zoneId || "zone-calabar-municipal";
+  const zoneName = boundaryCheck.zoneName || "Calabar Municipal";
+
+  let zone = await prisma.serviceZone.findUnique({
+    where: { id: zoneId },
+  });
+
+  if (!zone) {
+    zone = await prisma.serviceZone.create({
+      data: {
+        id: zoneId,
+        name: zoneName,
+        state: "Cross River State",
+        baseFareKobo: 120000,
+        perKmRateKobo: 15000,
+      },
+    });
+  }
+
+  // Find assigned responsible admin (Folake Daniels dispatcher/admin)
+  const responsibleAdmin =
+    (await prisma.user.findFirst({
+      where: { role: { in: ["DISPATCHER", "ADMIN"] } },
+    })) || user;
+
+  // Find an active rider in Calabar
+  const availableRider = await prisma.riderProfile.findFirst({
+    include: { user: true },
   });
 
   const conciergeServiceFeeKobo = 100000; // ₦1,000 personal shopper service fee
-  const deliveryFeeKobo = 150000; // ₦1,500 base delivery
+  const deliveryFeeKobo = 120000; // ₦1,200 Calabar city delivery
   const totalAmountKobo = data.goodsBudgetKobo + conciergeServiceFeeKobo + deliveryFeeKobo;
 
   const orderNumber = `NELO-SFM-${Math.floor(1000 + Math.random() * 9000)}`;
@@ -214,7 +246,7 @@ export async function createShopForMeOrderAction(data: {
         orderNumber,
         customerId: user.id,
         serviceType: "SHOP_FOR_ME",
-        status: "AWAITING_RIDER",
+        status: "ASSIGNED",
         zoneId: zone.id,
         subtotalKobo: data.goodsBudgetKobo,
         deliveryFeeKobo,
@@ -223,8 +255,8 @@ export async function createShopForMeOrderAction(data: {
         pickupAddressJson: JSON.stringify({
           name: data.shopName,
           address: data.shopAddress,
-          latitude: 6.4578, // Central market default
-          longitude: 3.3855,
+          latitude: 4.9650,
+          longitude: 8.3300,
         }),
         dropoffAddressJson: JSON.stringify(data.deliveryAddress),
         shopForMeDetails: {
@@ -235,12 +267,19 @@ export async function createShopForMeOrderAction(data: {
             spendingLimitKobo: data.spendingLimitKobo,
             substitutionPreference: data.substitutionPreference,
             notes: data.notes || "",
+            stage: "ASSIGNED",
+            assignedAdminId: responsibleAdmin.id,
+            assignedAdminName: responsibleAdmin.fullName || "Folake Daniels",
+            pickupLocked: true,
+            customerApprovalStatus: "NONE",
             items: {
               create: data.items.map((it) => ({
                 itemName: it.name,
                 quantity: it.quantity,
                 unit: it.unit || "item",
                 notes: it.notes || "",
+                photoUrl: it.photoUrl || null,
+                itemStatus: "PENDING",
               })),
             },
           },
@@ -257,22 +296,51 @@ export async function createShopForMeOrderAction(data: {
         },
         delivery: {
           create: {
-            distanceKm: 6.5,
-            estimatedDurationMinutes: 45,
-            riderEarningsKobo: Math.round(deliveryFeeKobo * 0.8) + 50000, // rider gets delivery cut + ₦500 concierge tip
-            status: "PENDING_DISPATCH",
+            distanceKm: 4.2,
+            estimatedDurationMinutes: 35,
+            riderEarningsKobo: Math.round(deliveryFeeKobo * 0.8) + 50000,
+            status: "ASSIGNED",
+            riderId: availableRider?.id || null,
           },
         },
         events: {
-          create: {
-            eventType: "ORDER_PLACED",
-            actorId: user.id,
-            actorRole: "CUSTOMER",
-            metadataJson: JSON.stringify({
-              shopName: data.shopName,
-              goodsBudgetKobo: data.goodsBudgetKobo,
-            }),
-          },
+          create: [
+            {
+              eventType: "ORDER_PLACED",
+              actorId: user.id,
+              actorRole: "CUSTOMER",
+              metadataJson: JSON.stringify({
+                shopName: data.shopName,
+                goodsBudgetKobo: data.goodsBudgetKobo,
+                spendingLimitKobo: data.spendingLimitKobo,
+              }),
+            },
+            {
+              eventType: "DISPATCH_ASSIGNED",
+              actorId: responsibleAdmin.id,
+              actorRole: "DISPATCHER",
+              metadataJson: JSON.stringify({
+                responsibleAdmin: responsibleAdmin.fullName,
+                assignedRider: availableRider?.user.fullName || "Emeka Obi",
+              }),
+            },
+          ],
+        },
+        messages: {
+          create: [
+            {
+              senderId: "system",
+              senderRole: "ADMIN",
+              senderName: "Nelo Calabar Dispatch",
+              message: `Order ${orderNumber} initialized. Initial budget of ₦${(
+                data.goodsBudgetKobo / 100
+              ).toLocaleString()} (approved cap ₦${(
+                data.spendingLimitKobo / 100
+              ).toLocaleString()}) is held in Escrow. Assigned Admin: ${responsibleAdmin.fullName}; Assigned Rider: ${
+                availableRider?.user.fullName || "Emeka Obi"
+              }. The rider will not advance funds—Nelo pays the shop directly upon in-store confirmation.`,
+            },
+          ],
         },
       },
       include: {
@@ -293,13 +361,595 @@ export async function createShopForMeOrderAction(data: {
     referenceType: "ORDER_PAYMENT",
   });
 
-  if (order.delivery) {
-    await createDispatchOffers(order.delivery.id);
-  }
-
   revalidatePath("/orders");
   revalidatePath("/rider");
-  return { success: true, orderNumber: order.orderNumber };
+  revalidatePath("/ops");
+  return { success: true, orderNumber: order.orderNumber, orderId: order.id };
+}
+
+/**
+ * 2b. Rider Arrived at Shop
+ */
+export async function riderArriveAtShopAction(orderId: string) {
+  const user = await getCurrentUser();
+  const order = await prisma.order.findUnique({
+    where: { id: orderId },
+    include: { shopForMeDetails: true },
+  });
+
+  if (!order || !order.shopForMeDetails) throw new Error("Shop for Me order not found");
+
+  await prisma.$transaction([
+    prisma.shopForMeDetails.update({
+      where: { orderId },
+      data: { stage: "RIDER_AT_SHOP" },
+    }),
+    prisma.order.update({
+      where: { id: orderId },
+      data: { status: "RIDER_AT_SHOP" },
+    }),
+    prisma.orderEvent.create({
+      data: {
+        orderId,
+        eventType: "RIDER_AT_SHOP",
+        actorId: user?.id,
+        actorRole: user?.role || "RIDER",
+        metadataJson: JSON.stringify({
+          shopName: order.shopForMeDetails.shopName,
+          timestamp: new Date().toISOString(),
+        }),
+      },
+    }),
+    prisma.orderMessage.create({
+      data: {
+        orderId,
+        senderId: user?.id || "rider",
+        senderRole: "RIDER",
+        senderName: user?.fullName || "Emeka Obi (Rider)",
+        message: `I have arrived at ${order.shopForMeDetails.shopName}. I am checking item availability and preparing the shop quote now.`,
+      },
+    }),
+  ]);
+
+  revalidatePath(`/orders/${orderId}`);
+  revalidatePath("/rider");
+  revalidatePath("/ops");
+  return { success: true };
+}
+
+/**
+ * 2c. Rider Submit In-Store Quote & Proposed Substitutions
+ */
+export async function riderSubmitShopQuoteAction(params: {
+  orderId: string;
+  shopQuoteKobo: number;
+  itemsUpdates: {
+    id: string;
+    itemStatus: "AVAILABLE" | "UNAVAILABLE" | "SUBSTITUTED";
+    actualPriceKobo?: number;
+    proposedSubName?: string;
+    proposedSubPriceKobo?: number;
+    proposedSubNotes?: string;
+  }[];
+  riderNotes?: string;
+}) {
+  const user = await getCurrentUser();
+  const order = await prisma.order.findUnique({
+    where: { id: params.orderId },
+    include: { shopForMeDetails: { include: { items: true } } },
+  });
+
+  if (!order || !order.shopForMeDetails) throw new Error("Shop for Me order not found");
+
+  const details = order.shopForMeDetails;
+  const approvedLimitKobo = details.spendingLimitKobo;
+
+  // Check if customer approval is required:
+  // 1. If total quote exceeds customer's approved limit
+  // 2. OR if any item is substituted or unavailable
+  const hasSubstitutions = params.itemsUpdates.some(
+    (i) => i.itemStatus === "SUBSTITUTED" || i.itemStatus === "UNAVAILABLE"
+  );
+  const exceedsApprovedBudget = params.shopQuoteKobo > approvedLimitKobo;
+  const requiresCustomerApproval = hasSubstitutions || exceedsApprovedBudget;
+
+  const nextStage = requiresCustomerApproval
+    ? "CUSTOMER_APPROVAL_PENDING"
+    : "SHOP_PAYMENT_PENDING";
+
+  // Update item records in DB
+  for (const it of params.itemsUpdates) {
+    await prisma.shopItem.update({
+      where: { id: it.id },
+      data: {
+        itemStatus: it.itemStatus,
+        actualPriceKobo: it.actualPriceKobo || null,
+        proposedSubName: it.proposedSubName || null,
+        proposedSubPriceKobo: it.proposedSubPriceKobo || null,
+        proposedSubNotes: it.proposedSubNotes || null,
+        isPurchased: it.itemStatus === "AVAILABLE" || it.itemStatus === "SUBSTITUTED",
+      },
+    });
+  }
+
+  // Update Shop for Me Details and Order status
+  await prisma.$transaction([
+    prisma.shopForMeDetails.update({
+      where: { orderId: params.orderId },
+      data: {
+        shopQuoteKobo: params.shopQuoteKobo,
+        stage: nextStage,
+        customerApprovalRequired: requiresCustomerApproval,
+        customerApprovalStatus: requiresCustomerApproval ? "PENDING" : "APPROVED",
+      },
+    }),
+    prisma.order.update({
+      where: { id: params.orderId },
+      data: { status: nextStage },
+    }),
+    prisma.orderEvent.create({
+      data: {
+        orderId: params.orderId,
+        eventType: requiresCustomerApproval
+          ? "QUOTE_APPROVAL_REQUIRED"
+          : "QUOTE_APPROVED_AUTOMATIC",
+        actorId: user?.id,
+        actorRole: "RIDER",
+        metadataJson: JSON.stringify({
+          shopQuoteKobo: params.shopQuoteKobo,
+          approvedLimitKobo,
+          hasSubstitutions,
+          exceedsApprovedBudget,
+        }),
+      },
+    }),
+    prisma.orderMessage.create({
+      data: {
+        orderId: params.orderId,
+        senderId: user?.id || "rider",
+        senderRole: "RIDER",
+        senderName: user?.fullName || "Emeka Obi (Rider)",
+        message: requiresCustomerApproval
+          ? `In-store total from ${details.shopName} is ₦${(
+              params.shopQuoteKobo / 100
+            ).toLocaleString()}.${
+              exceedsApprovedBudget
+                ? ` This is ₦${(
+                    (params.shopQuoteKobo - approvedLimitKobo) /
+                    100
+                  ).toLocaleString()} above your original limit.`
+                : ""
+            }${
+              hasSubstitutions ? " Note: Some items have substitutions or are out of stock." : ""
+            } Customer approval is required before payment can be made.`
+          : `All items verified at ${details.shopName}. Total is ₦${(
+              params.shopQuoteKobo / 100
+            ).toLocaleString()} (within approved limit). Awaiting Admin transfer to merchant.`,
+      },
+    }),
+  ]);
+
+  revalidatePath(`/orders/${params.orderId}`);
+  revalidatePath("/rider");
+  revalidatePath("/ops");
+  return { success: true, requiresCustomerApproval };
+}
+
+/**
+ * 2d. Customer Approve or Reject Proposed Substitutions / Budget Increase
+ */
+export async function customerRespondApprovalAction(params: {
+  orderId: string;
+  approved: boolean;
+  notes?: string;
+}) {
+  const user = await getCurrentUser();
+  const order = await prisma.order.findUnique({
+    where: { id: params.orderId },
+    include: { shopForMeDetails: true },
+  });
+
+  if (!order || !order.shopForMeDetails) throw new Error("Order not found");
+
+  const details = order.shopForMeDetails;
+  const quoteKobo = details.shopQuoteKobo || details.goodsBudgetKobo;
+
+  if (params.approved) {
+    // Approved: increase spending limit to match approved quote and advance to SHOP_PAYMENT_PENDING
+    await prisma.$transaction([
+      prisma.shopForMeDetails.update({
+        where: { orderId: params.orderId },
+        data: {
+          customerApprovalStatus: "APPROVED",
+          customerApprovedAt: new Date(),
+          spendingLimitKobo: Math.max(details.spendingLimitKobo, quoteKobo),
+          stage: "SHOP_PAYMENT_PENDING",
+        },
+      }),
+      prisma.order.update({
+        where: { id: params.orderId },
+        data: { status: "SHOP_PAYMENT_PENDING" },
+      }),
+      prisma.orderEvent.create({
+        data: {
+          orderId: params.orderId,
+          eventType: "CUSTOMER_APPROVAL_GRANTED",
+          actorId: user?.id,
+          actorRole: "CUSTOMER",
+          metadataJson: JSON.stringify({
+            approvedQuoteKobo: quoteKobo,
+            customerNotes: params.notes || "Customer approved changes",
+          }),
+        },
+      }),
+      prisma.orderMessage.create({
+        data: {
+          orderId: params.orderId,
+          senderId: user?.id || "customer",
+          senderRole: "CUSTOMER",
+          senderName: user?.fullName || "Chioma Adeleke (Customer)",
+          message: `Approved! I have accepted the in-store quote of ₦${(
+            quoteKobo / 100
+          ).toLocaleString()} and proposed substitutions. Admin may now proceed with paying the shop.`,
+        },
+      }),
+    ]);
+  } else {
+    // Rejected: mark rejection and inform rider and admin
+    await prisma.$transaction([
+      prisma.shopForMeDetails.update({
+        where: { orderId: params.orderId },
+        data: {
+          customerApprovalStatus: "REJECTED",
+          customerApprovalReason: params.notes || "Customer declined proposed changes",
+          stage: "RIDER_AT_SHOP",
+        },
+      }),
+      prisma.order.update({
+        where: { id: params.orderId },
+        data: { status: "RIDER_AT_SHOP" },
+      }),
+      prisma.orderEvent.create({
+        data: {
+          orderId: params.orderId,
+          eventType: "CUSTOMER_APPROVAL_REJECTED",
+          actorId: user?.id,
+          actorRole: "CUSTOMER",
+          metadataJson: JSON.stringify({
+            reason: params.notes || "Customer declined changes",
+          }),
+        },
+      }),
+      prisma.orderMessage.create({
+        data: {
+          orderId: params.orderId,
+          senderId: user?.id || "customer",
+          senderRole: "CUSTOMER",
+          senderName: user?.fullName || "Chioma Adeleke (Customer)",
+          message: `Approval Declined: ${
+            params.notes || "Please do not proceed with the proposed price or substitute item."
+          }`,
+        },
+      }),
+    ]);
+  }
+
+  revalidatePath(`/orders/${params.orderId}`);
+  revalidatePath("/rider");
+  revalidatePath("/ops");
+  return { success: true };
+}
+
+/**
+ * 2e. Admin Pays Shop & Confirms Payment (Releases Rider Pickup)
+ */
+export async function adminConfirmShopPaymentAction(params: {
+  orderId: string;
+  amountKobo: number;
+  paymentRef: string;
+  paymentMethod: string;
+  notes?: string;
+}) {
+  const staff = await requireStaff();
+  const order = await prisma.order.findUnique({
+    where: { id: params.orderId },
+    include: { shopForMeDetails: true },
+  });
+
+  if (!order || !order.shopForMeDetails) throw new Error("Order not found");
+
+  const details = order.shopForMeDetails;
+
+  // Record Admin Payment in Ledger
+  await recordAdminShopPaymentLedger({
+    orderId: order.id,
+    orderNumber: order.orderNumber,
+    amountKobo: params.amountKobo,
+    paymentRef: params.paymentRef,
+    paymentMethod: params.paymentMethod,
+  });
+
+  // Unlock pickup and advance stage
+  await prisma.$transaction([
+    prisma.shopForMeDetails.update({
+      where: { orderId: params.orderId },
+      data: {
+        shopPaymentStatus: "CONFIRMED",
+        shopPaymentAmountKobo: params.amountKobo,
+        shopPaymentRef: params.paymentRef,
+        shopPaymentMethod: params.paymentMethod,
+        shopPaidAt: new Date(),
+        pickupLocked: false,
+        pickupReleasedAt: new Date(),
+        stage: "PICKUP_RELEASED",
+      },
+    }),
+    prisma.order.update({
+      where: { id: params.orderId },
+      data: { status: "PICKUP_RELEASED" },
+    }),
+    prisma.orderEvent.create({
+      data: {
+        orderId: params.orderId,
+        eventType: "SHOP_PAYMENT_CONFIRMED",
+        actorId: staff.id,
+        actorRole: staff.role,
+        metadataJson: JSON.stringify({
+          amountKobo: params.amountKobo,
+          paymentRef: params.paymentRef,
+          paymentMethod: params.paymentMethod,
+          confirmedBy: staff.fullName,
+        }),
+      },
+    }),
+    prisma.orderMessage.create({
+      data: {
+        orderId: params.orderId,
+        senderId: staff.id,
+        senderRole: "ADMIN",
+        senderName: `${staff.fullName} (Admin / Dispatch)`,
+        message: `Admin Payment Confirmed: ₦${(
+          params.amountKobo / 100
+        ).toLocaleString()} transferred to merchant via ${params.paymentMethod} (Ref: ${
+          params.paymentRef
+        }). Pickup is RELEASED! Rider, you are authorized to collect the items.`,
+      },
+    }),
+  ]);
+
+  revalidatePath(`/orders/${params.orderId}`);
+  revalidatePath("/rider");
+  revalidatePath("/ops");
+  return { success: true };
+}
+
+/**
+ * 2f. Admin Report Failed Payment to Shop
+ */
+export async function adminReportPaymentFailedAction(params: {
+  orderId: string;
+  reason: string;
+}) {
+  const staff = await requireStaff();
+  const order = await prisma.order.findUnique({ where: { id: params.orderId } });
+  if (!order) throw new Error("Order not found");
+
+  await prisma.$transaction([
+    prisma.shopForMeDetails.update({
+      where: { orderId: params.orderId },
+      data: { shopPaymentStatus: "FAILED" },
+    }),
+    prisma.orderEvent.create({
+      data: {
+        orderId: params.orderId,
+        eventType: "SHOP_PAYMENT_FAILED",
+        actorId: staff.id,
+        actorRole: staff.role,
+        metadataJson: JSON.stringify({ reason: params.reason }),
+      },
+    }),
+    prisma.orderMessage.create({
+      data: {
+        orderId: params.orderId,
+        senderId: staff.id,
+        senderRole: "ADMIN",
+        senderName: `${staff.fullName} (Admin)`,
+        message: `Payment to merchant failed: ${params.reason}. We are re-attempting via alternate bank channel. Rider, please hold.`,
+      },
+    }),
+  ]);
+
+  revalidatePath(`/orders/${params.orderId}`);
+  revalidatePath("/ops");
+  return { success: true };
+}
+
+/**
+ * 2g. Admin Handle Customer No-Reply Timeout
+ */
+export async function adminHandleNoCustomerReplyAction(params: {
+  orderId: string;
+  action: "SKIP_UNAVAILABLE_PROCEED" | "CANCEL_AND_REFUND";
+  notes?: string;
+}) {
+  const staff = await requireStaff();
+  const order = await prisma.order.findUnique({
+    where: { id: params.orderId },
+    include: { shopForMeDetails: true },
+  });
+
+  if (!order || !order.shopForMeDetails) throw new Error("Order not found");
+
+  if (params.action === "SKIP_UNAVAILABLE_PROCEED") {
+    await prisma.$transaction([
+      prisma.shopForMeDetails.update({
+        where: { orderId: params.orderId },
+        data: {
+          customerApprovalStatus: "AUTO_SKIPPED",
+          stage: "SHOP_PAYMENT_PENDING",
+        },
+      }),
+      prisma.order.update({
+        where: { id: params.orderId },
+        data: { status: "SHOP_PAYMENT_PENDING" },
+      }),
+      prisma.orderMessage.create({
+        data: {
+          orderId: params.orderId,
+          senderId: staff.id,
+          senderRole: "ADMIN",
+          senderName: `${staff.fullName} (Admin)`,
+          message: `Customer did not respond within policy window. Per policy, skipping unavailable items and proceeding with verified goods.`,
+        },
+      }),
+    ]);
+  } else {
+    // Cancel & Refund
+    await opsIssueRefundAction({
+      orderId: params.orderId,
+      reason: `Order cancelled due to customer non-response and merchant item unavailability: ${
+        params.notes || "Full refund processed"
+      }`,
+    });
+  }
+
+  revalidatePath(`/orders/${params.orderId}`);
+  revalidatePath("/ops");
+  return { success: true };
+}
+
+/**
+ * 2h. Reconcile and Complete Shop for Me Order
+ */
+export async function reconcileAndCompleteShopForMeAction(params: {
+  orderId: string;
+  actualSpentKobo: number;
+}) {
+  const user = await getCurrentUser();
+  const order = await prisma.order.findUnique({
+    where: { id: params.orderId },
+    include: { shopForMeDetails: true, delivery: true },
+  });
+
+  if (!order || !order.shopForMeDetails) throw new Error("Order not found");
+
+  const initialBudgetKobo = order.shopForMeDetails.goodsBudgetKobo;
+  const actualSpent = params.actualSpentKobo;
+  const reconciledBalanceKobo = initialBudgetKobo - actualSpent; // positive = refund to customer, negative = additional collected
+
+  // Execute double-entry ledger reconciliation
+  await reconcileShopForMeLedger({
+    orderId: params.orderId,
+    budgetKobo: initialBudgetKobo,
+    actualSpentKobo: actualSpent,
+  });
+
+  const reconciliationStatus =
+    reconciledBalanceKobo > 0
+      ? "REFUNDED"
+      : reconciledBalanceKobo < 0
+      ? "ADDITIONAL_PAID"
+      : "RECONCILED";
+
+  await prisma.$transaction([
+    prisma.shopForMeDetails.update({
+      where: { orderId: params.orderId },
+      data: {
+        actualGoodsSpentKobo: actualSpent,
+        reconciledBalanceKobo,
+        reconciliationStatus,
+        stage: "DELIVERED",
+      },
+    }),
+    prisma.order.update({
+      where: { id: params.orderId },
+      data: { status: "DELIVERED" },
+    }),
+    prisma.orderEvent.create({
+      data: {
+        orderId: params.orderId,
+        eventType: "RECONCILIATION_COMPLETED",
+        actorId: user?.id,
+        actorRole: user?.role || "SYSTEM",
+        metadataJson: JSON.stringify({
+          initialBudgetKobo,
+          actualSpentKobo: actualSpent,
+          reconciledBalanceKobo,
+          reconciliationStatus,
+        }),
+      },
+    }),
+    prisma.orderMessage.create({
+      data: {
+        orderId: params.orderId,
+        senderId: "system",
+        senderRole: "ADMIN",
+        senderName: "Nelo Reconciliation Bot",
+        message:
+          reconciledBalanceKobo > 0
+            ? `Reconciliation complete: Initial escrow hold was ₦${(
+                initialBudgetKobo / 100
+              ).toLocaleString()}, actual merchant payment was ₦${(
+                actualSpent / 100
+              ).toLocaleString()}. Your unspent balance of ₦${(
+                reconciledBalanceKobo / 100
+              ).toLocaleString()} has been refunded to your wallet balance.`
+            : `Reconciliation complete: Purchase matched approved budget exactly. Items successfully delivered!`,
+      },
+    }),
+  ]);
+
+  revalidatePath(`/orders/${params.orderId}`);
+  revalidatePath("/rider");
+  revalidatePath("/ops");
+  return { success: true, reconciledBalanceKobo };
+}
+
+/**
+ * 2i. Send Message in Order Thread (Tri-party Customer-Rider-Admin)
+ */
+export async function sendOrderMessageAction(params: {
+  orderId: string;
+  message: string;
+  attachmentUrl?: string;
+}) {
+  const user = await getCurrentUser();
+  if (!user) throw new Error("Must be logged in to send a message.");
+
+  if (!params.message || !params.message.trim()) {
+    throw new Error("Message cannot be empty.");
+  }
+
+  const role = user.role === "RIDER" ? "RIDER" : user.role === "CUSTOMER" ? "CUSTOMER" : "ADMIN";
+
+  const message = await prisma.orderMessage.create({
+    data: {
+      orderId: params.orderId,
+      senderId: user.id,
+      senderRole: role,
+      senderName: user.fullName || "User",
+      message: params.message.trim(),
+      attachmentUrl: params.attachmentUrl || null,
+    },
+  });
+
+  await prisma.orderEvent.create({
+    data: {
+      orderId: params.orderId,
+      eventType: "MESSAGE_SENT",
+      actorId: user.id,
+      actorRole: role,
+      metadataJson: JSON.stringify({
+        senderName: user.fullName,
+        messagePreview: params.message.slice(0, 40),
+      }),
+    },
+  });
+
+  revalidatePath(`/orders/${params.orderId}`);
+  revalidatePath("/rider");
+  revalidatePath("/ops");
+  return { success: true, messageId: message.id };
 }
 
 /**

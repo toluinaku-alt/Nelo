@@ -9,6 +9,7 @@ import {
   Utensils,
   ClipboardList,
   Compass,
+  MapPin,
 } from "lucide-react";
 
 export async function Navbar() {
@@ -103,9 +104,12 @@ export async function Navbar() {
               Ops Dashboard
             </Link>
           ) : (
-            <span className="text-[11px] text-slate-400 border border-slate-200 rounded-md px-2 py-1">
-              Customer Boundary Active
-            </span>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200 shadow-xs" title="Live Pilot Operating Area">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+              <MapPin className="h-3 w-3 text-emerald-600" />
+              <span className="hidden sm:inline">Serving Calabar Pilot Zone</span>
+              <span className="sm:hidden">Calabar Pilot</span>
+            </div>
           )}
         </div>
       </div>

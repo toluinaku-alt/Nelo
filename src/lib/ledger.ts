@@ -97,9 +97,26 @@ export async function recordLedgerEntry(params: {
   });
 }
 
+export async function recordAdminShopPaymentLedger(params: {
+  orderId: string;
+  orderNumber: string;
+  amountKobo: number;
+  paymentRef: string;
+  paymentMethod: string;
+}) {
+  return await recordLedgerEntry({
+    orderId: params.orderId,
+    debitAccountCode: "ESCROW_GOODS",
+    creditAccountCode: "VENDOR_PAYABLE",
+    amountKobo: params.amountKobo,
+    description: `Admin paid merchant for ${params.orderNumber} via ${params.paymentMethod} (Ref: ${params.paymentRef})`,
+    referenceType: "ORDER_PAYMENT",
+  });
+}
+
 /**
- * Reconciles Shop for Me goods budget with actual receipt spend
- * If actual < budget, the difference is refunded back to customer.
+ * Reconciles Shop for Me goods budget with actual shop purchase
+ * If actual < budget, the difference is refunded back to customer wallet.
  * If actual > budget (within approved spending limit), customer wallet is charged.
  */
 export async function reconcileShopForMeLedger(params: {
@@ -120,16 +137,14 @@ export async function reconcileShopForMeLedger(params: {
       referenceType: "SHOPPING_RECONCILIATION",
       isCompensating: true,
     });
-  }
-
-  // Transfer actual spent goods to Rider payable (rider paid from their wallet/cash at stall)
-  if (actualSpentKobo > 0) {
+  } else if (actualSpentKobo > budgetKobo) {
+    const additionalKobo = actualSpentKobo - budgetKobo;
     await recordLedgerEntry({
       orderId,
-      debitAccountCode: "ESCROW_GOODS",
-      creditAccountCode: "RIDER_PAYABLE",
-      amountKobo: actualSpentKobo,
-      description: `Rider reimbursement for shop purchases: ₦${(actualSpentKobo / 100).toFixed(2)}`,
+      debitAccountCode: "CUSTOMER_WALLET",
+      creditAccountCode: "ESCROW_GOODS",
+      amountKobo: additionalKobo,
+      description: `Shop-for-Me additional authorized spend approved by customer: ₦${(additionalKobo / 100).toFixed(2)}`,
       referenceType: "SHOPPING_RECONCILIATION",
     });
   }

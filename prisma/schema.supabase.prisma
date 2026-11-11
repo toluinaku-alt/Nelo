@@ -215,6 +215,7 @@ model Order {
   delivery             Delivery?
   payment              Payment?
   events               OrderEvent[]
+  messages             OrderMessage[]
   supportCases         SupportCase[]
   ratings              Rating[]
 
@@ -261,28 +262,53 @@ model ShopForMeDetails {
   spendingLimitKobo      Int
   substitutionPreference String     @default("CALL_CUSTOMER")
   receiptPhotoUrl        String?
-  reconciliationStatus   String     @default("PENDING")
+  reconciliationStatus   String     @default("PENDING") // PENDING, RECONCILED, REFUNDED, ADDITIONAL_PAID
   customerApprovalRequired Boolean  @default(false)
   customerApprovedAt     DateTime?
   notes                  String?
+
+  // Calabar Pilot Workflow & Payment Safeguards
+  stage                  String     @default("REQUESTED") // REQUESTED, ASSIGNED, RIDER_AT_SHOP, QUOTE_SUBMITTED, CUSTOMER_APPROVAL_PENDING, SHOP_PAYMENT_PENDING, SHOP_PAID, PICKUP_RELEASED, IN_TRANSIT, DELIVERED, CANCELLED, REFUNDED
+  assignedAdminId        String?
+  assignedAdminName      String?
+  shopQuoteKobo          Int?
+  shopPaymentStatus      String     @default("UNPAID") // UNPAID, PENDING, CONFIRMED, FAILED
+  shopPaymentAmountKobo  Int?
+  shopPaymentRef         String?
+  shopPaymentMethod      String?
+  shopPaidAt             DateTime?
+  pickupLocked           Boolean    @default(true)
+  pickupReleasedAt       DateTime?
+  customerApprovalStatus String     @default("NONE") // NONE, PENDING, APPROVED, REJECTED
+  customerApprovalReason String?
+  reconciledBalanceKobo  Int        @default(0)
+  reconciliationNotes    String?
 
   order                  Order      @relation(fields: [orderId], references: [id], onDelete: Cascade)
   items                  ShopItem[]
 }
 
 model ShopItem {
-  id                String           @id @default(uuid())
-  shopDetailsId     String
-  itemName          String
-  estimatedPriceKobo Int             @default(0)
-  quantity          Int              @default(1)
-  unit              String?
-  notes             String?
-  isPurchased       Boolean          @default(false)
-  actualPriceKobo   Int?
-  substitutionNotes String?
+  id                  String           @id @default(uuid())
+  shopDetailsId       String
+  itemName            String
+  estimatedPriceKobo  Int              @default(0)
+  quantity            Int              @default(1)
+  unit                String?
+  notes               String?
+  photoUrl            String?
+  isPurchased         Boolean          @default(false)
+  actualPriceKobo     Int?
+  substitutionNotes   String?
 
-  shopDetails       ShopForMeDetails @relation(fields: [shopDetailsId], references: [id], onDelete: Cascade)
+  // Calabar Pilot Item-Level Tracking
+  itemStatus          String           @default("PENDING") // PENDING, AVAILABLE, UNAVAILABLE, SUBSTITUTED
+  proposedSubName     String?
+  proposedSubPriceKobo Int?
+  proposedSubNotes    String?
+  customerApproved    Boolean?
+
+  shopDetails         ShopForMeDetails @relation(fields: [shopDetailsId], references: [id], onDelete: Cascade)
 
   @@index([shopDetailsId])
 }
@@ -415,6 +441,22 @@ model OrderEvent {
 
   @@index([orderId])
   @@index([timestamp])
+}
+
+model OrderMessage {
+  id            String   @id @default(uuid())
+  orderId       String
+  senderId      String
+  senderRole    String   // ADMIN, RIDER, CUSTOMER
+  senderName    String
+  message       String
+  attachmentUrl String?
+  createdAt     DateTime @default(now())
+
+  order         Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([orderId])
+  @@index([createdAt])
 }
 
 model SupportCase {

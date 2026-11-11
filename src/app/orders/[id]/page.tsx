@@ -35,6 +35,9 @@ export default async function OrderDetailPage({
       events: {
         orderBy: { timestamp: "desc" },
       },
+      messages: {
+        orderBy: { createdAt: "asc" },
+      },
     },
   });
 
@@ -75,12 +78,29 @@ export default async function OrderDetailPage({
 
   return (
     <OrderTrackingClient
+      currentUser={{
+        id: user?.id || "anon",
+        role: user?.role || "CUSTOMER",
+        name: user?.fullName || "User",
+      }}
       order={{
         ...order,
         createdAt: order.createdAt.toISOString(),
+        shopForMeDetails: order.shopForMeDetails
+          ? {
+              ...order.shopForMeDetails,
+              customerApprovedAt: order.shopForMeDetails.customerApprovedAt?.toISOString() || null,
+              shopPaidAt: order.shopForMeDetails.shopPaidAt?.toISOString() || null,
+              pickupReleasedAt: order.shopForMeDetails.pickupReleasedAt?.toISOString() || null,
+            }
+          : null,
         events: order.events.map((e: any) => ({
           ...e,
           createdAt: e.timestamp.toISOString(),
+        })),
+        messages: (order.messages || []).map((m: any) => ({
+          ...m,
+          createdAt: m.createdAt.toISOString(),
         })),
       }}
     />
