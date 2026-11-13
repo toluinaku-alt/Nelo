@@ -1,44 +1,35 @@
-import { cookies } from "next/headers";
-import { prisma } from "./prisma";
-import { UserRole, DEMO_USERS, STAFF_ROLES } from "./types";
+import { auth } from "@clerk/nextjs/server";
+import { clerkClient } from "@clerk/clerk-sdk-node";
+import { UserRole, STAFF_ROLES } from "./types";
 
-export { DEMO_USERS, STAFF_ROLES };
+// Export role helpers for other modules
+export { STAFF_ROLES };
 
+/**
+ * Get the currently signed‑in user via Clerk.
+ * The user's role is expected to be stored in `publicMetadata.role`.
+ * If the role is missing we default to "CUSTOMER".
+ */
 export async function getCurrentUser() {
-  const cookieStore = cookies();
-  const activeEmail = cookieStore.get("nelo_active_user")?.value || "chioma@nelo.ng";
+  const { userId } = auth();
+  if (!userId) return null;
 
-  const user = await prisma.user.findUnique({
-    where: { email: activeEmail },
-    include: {
-      addresses: true,
-      riderProfile: true,
-      vendorStaff: {
-        include: {
-          vendor: true,
-        },
-      },
-    },
-  });
+  const user = await clerkClient.users.getUser(userId);
+  const email = user.emailAddresses?.[0]?.emailAddress ?? "";
+  const role = (user.publicMetadata?.role as UserRole) ?? ("CUSTOMER" as UserRole);
 
-  if (!user) {
-    // If not found in DB yet (e.g. before seeding), return mock matching demo user
-    const demo = DEMO_USERS.find((u) => u.email === activeEmail) || DEMO_USERS[0];
-    return {
-      id: "mock-" + demo.role.toLowerCase(),
-      email: demo.email,
-      fullName: demo.name,
-      phone: "+234 803 123 4567",
-      role: demo.role,
-      avatarUrl: null,
-      isActive: true,
-      addresses: [] as any[],
-      riderProfile: demo.role === "RIDER" ? { id: "mock-rider-1", isOnline: true } : null,
-      vendorStaff: demo.role === "VENDOR_OWNER" ? [{ vendorId: "mock-vendor-1" }] : [],
-    };
-  }
-
-  return user;
+  // Return a minimal shape compatible with existing code expectations
+  return {
+    id: user.id,
+    email,
+    fullName: user.fullName ?? "",
+    role,
+    avatarUrl: user.imageUrl ?? null,
+    // The following fields are not needed for role‑based checks, but keep placeholders
+    addresses: [] as any[],
+    riderProfile: null,
+    vendorStaff: [],
+  };
 }
 
 export function isStaffRole(role: string): boolean {
@@ -68,3 +59,4 @@ export async function requireRole(allowedRoles: UserRole[]) {
   }
   return user;
 }
+
