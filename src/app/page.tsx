@@ -19,6 +19,7 @@ export default async function HomePage() {
   const user = await getCurrentUser();
   const vendors = await prisma.vendor.findMany({
     take: 3,
+    where: { zone: { name: { contains: "Calabar" } } },
     include: {
       zone: true,
       catalogItems: { take: 2 },
@@ -32,7 +33,7 @@ export default async function HomePage() {
         <div className="max-w-3xl space-y-6">
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-emerald-300 text-xs font-semibold">
             <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-            Live across Lagos & Abuja • Built for Nigeria
+            Live across Calabar • Built for Nigeria
           </div>
           <h1 className="text-3xl sm:text-5xl font-black tracking-tight leading-tight">
             Order food, send personal shoppers, or courier packages across town.
@@ -211,7 +212,7 @@ export default async function HomePage() {
         <div className="flex items-center justify-between">
           <div>
             <h2 className="text-2xl font-black text-slate-900 tracking-tight">
-              Verified Vendors in Lagos & Abuja
+              Verified Vendors in Calabar
             </h2>
             <p className="text-slate-600 text-sm">
               Authentic meals and farm-fresh grocery staples prepared with care.
